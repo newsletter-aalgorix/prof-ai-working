@@ -1,0 +1,250 @@
+version: '3.8'
+
+services:
+  # Redis - Message broker and result backend
+  redis:
+    image: redis:7-alpine
+    container_name: profai-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --maxmemory 1gb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - profai-network
+    restart: unless-stopped
+
+  # PostgreSQL - Database (optional, for when USE_DATABASE=True)
+  # postgres:
+  #   image: postgres:15-alpine
+  #   container_name: profai-postgres
+  #   environment:
+  #     POSTGRES_DB: profai
+  #     POSTGRES_USER: profai
+  #     POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+  #   ports:
+  #     - "5432:5432"
+  #   volumes:
+  #     - postgres-data:/var/lib/postgresql/data
+  #   networks:
+  #     - profai-network
+  #   restart: unless-stopped
+
+  # API Server - Handles HTTP requests
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: profai-api
+    ports:
+      - "5001:5001"
+      - "8765:8765"
+    environment:
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      
+      # Server
+      HOST: 0.0.0.0
+      PORT: 5001
+      DEBUG: "False"
+      
+      # API Keys
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      SARVAM_API_KEY: ${SARVAM_API_KEY}
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
+      
+      # ChromaDB Cloud
+      USE_CHROMA_CLOUD: "True"
+      CHROMA_CLOUD_API_KEY: ${CHROMA_CLOUD_API_KEY:-}
+      CHROMA_CLOUD_TENANT: ${CHROMA_CLOUD_TENANT:-}
+      CHROMA_CLOUD_DATABASE: ${CHROMA_CLOUD_DATABASE:-}
+      
+      # Database (when ready)
+      USE_DATABASE: "False"
+      DATABASE_URL: ${DATABASE_URL:-}
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: python run_profai_websocket_celery.py
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - profai-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          cpus: '1'
+          memory: 2G
+
+  # Worker 1 - Processes background jobs
+  worker-1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: profai-worker-1
+    environment:
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      
+      # API Keys
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      SARVAM_API_KEY: ${SARVAM_API_KEY}
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      
+      # ChromaDB Cloud
+      USE_CHROMA_CLOUD: "True"
+      CHROMA_CLOUD_API_KEY: ${CHROMA_CLOUD_API_KEY:-}
+      CHROMA_CLOUD_TENANT: ${CHROMA_CLOUD_TENANT:-}
+      CHROMA_CLOUD_DATABASE: ${CHROMA_CLOUD_DATABASE:-}
+      
+      # Database
+      USE_DATABASE: "False"
+      DATABASE_URL: ${DATABASE_URL:-}
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: python worker.py
+    networks:
+      - profai-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+        reservations:
+          cpus: '2'
+          memory: 4G
+
+  # Worker 2 - Additional worker for scaling
+  worker-2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: profai-worker-2
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      SARVAM_API_KEY: ${SARVAM_API_KEY}
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      USE_CHROMA_CLOUD: "True"
+      CHROMA_CLOUD_API_KEY: ${CHROMA_CLOUD_API_KEY:-}
+      CHROMA_CLOUD_TENANT: ${CHROMA_CLOUD_TENANT:-}
+      CHROMA_CLOUD_DATABASE: ${CHROMA_CLOUD_DATABASE:-}
+      USE_DATABASE: "False"
+      DATABASE_URL: ${DATABASE_URL:-}
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: python worker.py
+    networks:
+      - profai-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+        reservations:
+          cpus: '2'
+          memory: 4G
+
+  # Worker 3 - Additional worker for scaling
+  worker-3:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: profai-worker-3
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      SARVAM_API_KEY: ${SARVAM_API_KEY}
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      USE_CHROMA_CLOUD: "True"
+      CHROMA_CLOUD_API_KEY: ${CHROMA_CLOUD_API_KEY:-}
+      CHROMA_CLOUD_TENANT: ${CHROMA_CLOUD_TENANT:-}
+      CHROMA_CLOUD_DATABASE: ${CHROMA_CLOUD_DATABASE:-}
+      USE_DATABASE: "False"
+      DATABASE_URL: ${DATABASE_URL:-}
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: python worker.py
+    networks:
+      - profai-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+        reservations:
+          cpus: '2'
+          memory: 4G
+
+  # Flower - Celery monitoring dashboard (optional)
+  flower:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: profai-flower
+    ports:
+      - "5555:5555"
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: celery -A celery_app flower --port=5555
+    networks:
+      - profai-network
+    restart: unless-stopped
+
+volumes:
+  redis-data:
+    driver: local
+  # postgres-data:
+  #   driver: local
+
+networks:
+  profai-network:
+    driver: bridge
+
+# Usage:
+# 1. Set environment variables in .env file
+# 2. Run: docker-compose -f docker-compose-production.yml up -d
+# 3. Scale workers: docker-compose -f docker-compose-production.yml up -d --scale worker=10
+# 4. Monitor: http://localhost:5555 (Flower dashboard)
+# 5. API: http://localhost:5001

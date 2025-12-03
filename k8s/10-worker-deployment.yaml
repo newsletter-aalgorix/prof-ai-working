@@ -1,0 +1,204 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: profai-worker
+  namespace: profai
+  labels:
+    app: profai
+    component: worker
+spec:
+  replicas: 10  # Start with 10 workers, scale based on queue length
+  selector:
+    matchLabels:
+      app: profai
+      component: worker
+  template:
+    metadata:
+      labels:
+        app: profai
+        component: worker
+    spec:
+      containers:
+      - name: worker
+        image: profai:latest  # Same image as API, different command
+        command: ["python", "worker.py"]
+        
+        env:
+        # Redis connection
+        - name: REDIS_HOST
+          value: "redis"
+        - name: REDIS_PORT
+          value: "6379"
+        - name: REDIS_DB
+          value: "0"
+        
+        # API Keys from secrets
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: profai-secrets
+              key: OPENAI_API_KEY
+        - name: SARVAM_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: profai-secrets
+              key: SARVAM_API_KEY
+        - name: GROQ_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: profai-secrets
+              key: GROQ_API_KEY
+        
+        # ChromaDB Cloud (from ConfigMap)
+        - name: USE_CHROMA_CLOUD
+          valueFrom:
+            configMapKeyRef:
+              name: profai-config
+              key: USE_CHROMA_CLOUD
+        - name: CHROMA_CLOUD_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: profai-secrets
+              key: CHROMA_CLOUD_API_KEY
+              optional: true
+        - name: CHROMA_CLOUD_TENANT
+          valueFrom:
+            configMapKeyRef:
+              name: profai-config
+              key: CHROMA_CLOUD_TENANT
+              optional: true
+        - name: CHROMA_CLOUD_DATABASE
+          valueFrom:
+            configMapKeyRef:
+              name: profai-config
+              key: CHROMA_CLOUD_DATABASE
+              optional: true
+        
+        # Database (when enabled)
+        - name: USE_DATABASE
+          valueFrom:
+            configMapKeyRef:
+              name: profai-config
+              key: USE_DATABASE
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: profai-secrets
+              key: DATABASE_URL
+              optional: true
+        
+        # Resource limits - Workers need MORE resources than API
+        resources:
+          requests:
+            memory: "4Gi"    # Increased for LLM processing
+            cpu: "2000m"     # 2 full cores
+          limits:
+            memory: "8Gi"
+            cpu: "4000m"
+        
+        # Persistent storage for temp files
+        volumeMounts:
+        - name: data
+          mountPath: /app/data
+        
+        # Health check (Celery worker heartbeat)
+        livenessProbe:
+          exec:
+            command:
+            - celery
+            - -A
+            - celery_app
+            - inspect
+            - ping
+            - -d
+            - celery@$HOSTNAME
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+      
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: profai-pvc
+
+---
+# Horizontal Pod Autoscaler for Workers
+# Scales based on CPU and custom metrics (queue length)
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: profai-worker-hpa
+  namespace: profai
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: profai-worker
+  minReplicas: 10
+  maxReplicas: 100  # Can handle 100 workers × 3 tasks = 300 concurrent jobs
+  metrics:
+  # Scale on CPU usage
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  
+  # Scale on memory usage
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  
+  # TODO: Scale on queue length (requires custom metrics)
+  # - type: External
+  #   external:
+  #     metric:
+  #       name: redis_queue_length
+  #       selector:
+  #         matchLabels:
+  #           queue: pdf_processing
+  #     target:
+  #       type: AverageValue
+  #       averageValue: "10"  # Scale up if queue > 10 per worker
+  
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0  # Scale up immediately
+      policies:
+      - type: Percent
+        value: 100  # Double workers if needed
+        periodSeconds: 15
+      - type: Pods
+        value: 10  # Or add 10 workers at a time
+        periodSeconds: 15
+      selectPolicy: Max
+    scaleDown:
+      stabilizationWindowSeconds: 300  # Wait 5 minutes before scaling down
+      policies:
+      - type: Percent
+        value: 50  # Reduce by half
+        periodSeconds: 60
+      - type: Pods
+        value: 5  # Or remove 5 workers at a time
+        periodSeconds: 60
+      selectPolicy: Min
+
+---
+# Pod Disruption Budget
+# Ensures we always have workers available
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: profai-worker-pdb
+  namespace: profai
+spec:
+  minAvailable: 5  # Always keep at least 5 workers running
+  selector:
+    matchLabels:
+      app: profai
+      component: worker

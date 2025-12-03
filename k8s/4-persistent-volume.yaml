@@ -1,0 +1,19 @@
+# PersistentVolumeClaim - Storage for data that survives pod restarts
+# This is where course data, quizzes, and vector store (if local) are saved
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: profai-data-pvc
+  namespace: profai
+  labels:
+    app: profai
+spec:
+  accessModes:
+    - ReadWriteOnce  # Can be mounted by one node at a time
+  resources:
+    requests:
+      storage: 10Gi  # Adjust based on your needs
+  # storageClassName: default  # Uncomment and set if needed for your cluster
+  # For AWS EKS, use: gp2 or gp3
+  # For local testing: standard or hostpath

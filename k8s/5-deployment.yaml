@@ -1,0 +1,157 @@
+# Deployment - Defines how to run your application
+# Specifies number of replicas, resources, health checks, etc.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: profai-deployment
+  namespace: profai
+  labels:
+    app: profai
+spec:
+  # Number of pod replicas (auto-scaled by HPA)
+  # Set to 1 for local testing, will be scaled by HPA in production
+  replicas: 1
+  
+  # How updates are rolled out
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1        # Max pods above desired count during update
+      maxUnavailable: 0  # Keep all pods running during update
+  
+  selector:
+    matchLabels:
+      app: profai
+  
+  template:
+    metadata:
+      labels:
+        app: profai
+        version: v1
+    spec:
+      # Use the non-root user we created in Dockerfile
+      securityContext:
+        fsGroup: 1000
+      
+      containers:
+      - name: profai
+        # REPLACE WITH YOUR ECR IMAGE URI WHEN DEPLOYING TO AWS
+        # For local testing with Docker Desktop K8s, use:
+        image: profai:latest
+        imagePullPolicy: IfNotPresent  # Change to Always for production
+        
+        ports:
+        - name: http
+          containerPort: 5001
+          protocol: TCP
+        - name: websocket
+          containerPort: 8765
+          protocol: TCP
+        
+        # Environment variables from ConfigMap
+        envFrom:
+        - configMapRef:
+            name: profai-config
+        
+        # Environment variables from Secrets
+        env:
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: profai-secrets
+              key: OPENAI_API_KEY
+        - name: SARVAM_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: profai-secrets
+              key: SARVAM_API_KEY
+        - name: GROQ_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: profai-secrets
+              key: GROQ_API_KEY
+        - name: ELEVENLABS_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: profai-secrets
+              key: ELEVENLABS_API_KEY
+        - name: CHROMA_CLOUD_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: profai-secrets
+              key: CHROMA_CLOUD_API_KEY
+        - name: CHROMA_CLOUD_TENANT
+          valueFrom:
+            secretKeyRef:
+              name: profai-secrets
+              key: CHROMA_CLOUD_TENANT
+        - name: CHROMA_CLOUD_DATABASE
+          valueFrom:
+            secretKeyRef:
+              name: profai-secrets
+              key: CHROMA_CLOUD_DATABASE
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: profai-secrets
+              key: DATABASE_URL
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: profai-secrets
+              key: REDIS_URL
+        
+        # Mount persistent volume for data
+        volumeMounts:
+        - name: profai-data
+          mountPath: /app/data
+        
+        # Resource limits and requests (reduced for local testing)
+        resources:
+          requests:
+            memory: "512Mi"   # 512MB (reduced from 2GB)
+            cpu: "250m"       # 0.25 CPU core (reduced from 1)
+          limits:
+            memory: "1Gi"     # 1GB (reduced from 4GB)
+            cpu: "500m"       # 0.5 CPU core (reduced from 2)
+        
+        # Liveness probe - restart if unhealthy
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 5001
+          initialDelaySeconds: 60  # Wait 60s after start
+          periodSeconds: 30        # Check every 30s
+          timeoutSeconds: 10
+          failureThreshold: 3      # Restart after 3 failures
+        
+        # Readiness probe - don't send traffic if not ready
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 5001
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
+        
+        # Startup probe - for slow-starting containers
+        startupProbe:
+          httpGet:
+            path: /
+            port: 5001
+          initialDelaySeconds: 0
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 30  # Allow up to 5 minutes to start
+      
+      # Volume definition
+      volumes:
+      - name: profai-data
+        persistentVolumeClaim:
+          claimName: profai-data-pvc
+      
+      # Restart policy
+      restartPolicy: Always

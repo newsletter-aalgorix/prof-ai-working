@@ -1,0 +1,60 @@
+# Services - Define how to access your pods
+# Think of it as a stable "phone number" for your application
+
+---
+# ClusterIP Service - Internal communication within cluster
+apiVersion: v1
+kind: Service
+metadata:
+  name: profai-service
+  namespace: profai
+  labels:
+    app: profai
+spec:
+  type: ClusterIP
+  selector:
+    app: profai
+  ports:
+  - name: http
+    port: 5001
+    targetPort: 5001
+    protocol: TCP
+  - name: websocket
+    port: 8765
+    targetPort: 8765
+    protocol: TCP
+  sessionAffinity: ClientIP  # Sticky sessions for WebSocket
+
+---
+# LoadBalancer Service - External access (for cloud deployments)
+# For local testing, this creates a LoadBalancer
+# For AWS, this creates an ELB/ALB
+apiVersion: v1
+kind: Service
+metadata:
+  name: profai-loadbalancer
+  namespace: profai
+  labels:
+    app: profai
+  annotations:
+    # AWS Load Balancer annotations (uncomment when deploying to AWS EKS)
+    # service.beta.kubernetes.io/aws-load-balancer-type: "nlb"  # Network Load Balancer
+    # service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+    # service.beta.kubernetes.io/aws-load-balancer-backend-protocol: "tcp"
+spec:
+  type: LoadBalancer
+  selector:
+    app: profai
+  ports:
+  - name: http
+    port: 80
+    targetPort: 5001
+    protocol: TCP
+  - name: websocket
+    port: 8765
+    targetPort: 8765
+    protocol: TCP
+  sessionAffinity: ClientIP  # Important for WebSocket connections
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 3600  # 1 hour sticky session

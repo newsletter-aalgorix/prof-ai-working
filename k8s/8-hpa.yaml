@@ -1,0 +1,72 @@
+# HorizontalPodAutoscaler - Automatically scale pods based on metrics
+# Scales between min and max replicas based on CPU/memory usage
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: profai-hpa
+  namespace: profai
+  labels:
+    app: profai
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: profai-deployment
+  
+  minReplicas: 2    # Minimum number of pods
+  maxReplicas: 10   # Maximum number of pods
+  
+  # Scaling behavior
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300  # Wait 5 minutes before scaling down
+      policies:
+      - type: Percent
+        value: 50        # Scale down by max 50% of current pods
+        periodSeconds: 60
+      - type: Pods
+        value: 1         # Scale down by max 1 pod at a time
+        periodSeconds: 60
+      selectPolicy: Min  # Use the most conservative policy
+    
+    scaleUp:
+      stabilizationWindowSeconds: 0  # Scale up immediately
+      policies:
+      - type: Percent
+        value: 100       # Scale up by max 100% (double) of current pods
+        periodSeconds: 15
+      - type: Pods
+        value: 2         # Scale up by max 2 pods at a time
+        periodSeconds: 15
+      selectPolicy: Max  # Use the most aggressive policy
+  
+  # Metrics to monitor for scaling decisions
+  metrics:
+  # CPU-based scaling
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70  # Scale up if CPU > 70%
+  
+  # Memory-based scaling
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80  # Scale up if memory > 80%
+
+---
+# Note: For HPA to work, you need:
+# 1. Metrics Server installed in your cluster
+# 2. Resource requests defined in your Deployment (already done in 5-deployment.yaml)
+#
+# To install Metrics Server:
+# kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+#
+# To check HPA status:
+# kubectl get hpa -n profai
+# kubectl describe hpa profai-hpa -n profai

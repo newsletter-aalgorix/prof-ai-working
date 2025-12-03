@@ -1,0 +1,11 @@
+# Namespace - Isolates ProfessorAI resources from other applications
+# Think of it as a separate "workspace" in your Kubernetes cluster
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: profai
+  labels:
+    name: profai
+    environment: production
+    app: professorai

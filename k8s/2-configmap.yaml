@@ -1,0 +1,43 @@
+# ConfigMap - Non-sensitive configuration data
+# These are environment variables that aren't secret
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: profai-config
+  namespace: profai
+  labels:
+    app: profai
+data:
+  # Server Configuration
+  HOST: "0.0.0.0"
+  PORT: "5001"
+  WEBSOCKET_HOST: "0.0.0.0"
+  WEBSOCKET_PORT: "8765"
+  DEBUG: "False"  # Set to False in production
+  
+  # Vector Storage Configuration
+  USE_CHROMA_CLOUD: "True"  # Set to False for local FAISS
+  CHROMA_COLLECTION_NAME: "profai_documents"
+  
+  # LLM Configuration
+  LLM_MODEL_NAME: "gpt-4o-mini"
+  EMBEDDING_MODEL_NAME: "text-embedding-3-large"
+  CURRICULUM_GENERATION_MODEL: "gpt-4o"
+  CONTENT_GENERATION_MODEL: "gpt-4o"
+  
+  # Text Processing
+  CHUNK_SIZE: "500"
+  CHUNK_OVERLAP: "100"
+  MAX_CHUNK_SIZE: "800"
+  RETRIEVAL_K: "2"
+  RETRIEVAL_SEARCH_TYPE: "similarity"
+  
+  # Audio Settings
+  SARVAM_TTS_SPEAKER: "anushka"
+  
+  # Database Configuration
+  USE_DATABASE: "True"  # Enable PostgreSQL database (Neon)
+  
+  # CORS (adjust for production)
+  CORS_ALLOWED_ORIGINS: "*"

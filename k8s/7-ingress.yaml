@@ -1,0 +1,80 @@
+# Ingress - HTTP/HTTPS routing rules
+# Routes external traffic to your services based on URL paths
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: profai-ingress
+  namespace: profai
+  labels:
+    app: profai
+  annotations:
+    # Nginx Ingress Controller annotations
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"  # Set to true if using HTTPS
+    
+    # WebSocket support
+    nginx.ingress.kubernetes.io/websocket-services: "profai-service"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    
+    # CORS settings
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Authorization"
+    
+    # Request size limits (for PDF uploads)
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    
+    # AWS ALB Ingress Controller annotations (uncomment when using AWS EKS with ALB)
+    # kubernetes.io/ingress.class: alb
+    # alb.ingress.kubernetes.io/scheme: internet-facing
+    # alb.ingress.kubernetes.io/target-type: ip
+    # alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    # alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:region:account-id:certificate/certificate-id
+    
+spec:
+  ingressClassName: nginx  # Use nginx ingress controller
+  
+  rules:
+  # Main HTTP traffic
+  - host: profai.local  # Change to your actual domain for production
+    http:
+      paths:
+      # API routes
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: profai-service
+            port:
+              number: 5001
+      
+      # Static files and web interface
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: profai-service
+            port:
+              number: 5001
+      
+      # WebSocket route
+      - path: /ws
+        pathType: Prefix
+        backend:
+          service:
+            name: profai-service
+            port:
+              number: 8765
+  
+  # Uncomment for HTTPS support
+  # tls:
+  # - hosts:
+  #   - profai.yourdomain.com
+  #   secretName: profai-tls-secret  # Create this secret with your TLS cert
+
+---
+# For local testing without a domain, you can also access via LoadBalancer IP directly
+# kubectl get svc profai-loadbalancer -n profai
